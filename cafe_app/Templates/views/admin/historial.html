@@ -1,0 +1,183 @@
+{% extends 'base/base.html' %}
+
+{% block content_slidebar %}
+  {% if rol %}
+    {% if rol == 'admin' %}
+      {% include 'menu/menu_admin.html' %}
+      {% block menu_admin %}
+
+      {% endblock %}
+    {% elif rol == 'empleado' %}
+      {% include 'menu/menu_empleado.html' %}
+      {% block menu_empleado %}
+
+      {% endblock %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block titulo %}
+  Historial
+{% endblock %}
+
+{% block content_main %}
+{% load static %}
+  <script src="https://cdn.lordicon.com/lordicon.js"></script>
+  <br />
+  <table id="historial" border>
+    <div class="flex_end">
+      <lord-icon src="https://cdn.lordicon.com/yqiuuheo.json" trigger="hover" colors="primary:#ffffff,secondary:#c71f16" style="width:50px;height:50px" id="generarFacturaPdf" data-formato="pdf" target="_blank"></lord-icon>
+      <lord-icon src="https://cdn.lordicon.com/yqiuuheo.json" trigger="hover" colors="primary:#ffffff,secondary:#109121" style="width:50px;height:50px" id="generarFacturaExcel" data-formato="excel"></lord-icon>
+    </div>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Hora</th>
+        <th>Producto</th>
+        <th>Id de compra</th>
+        <th>Cantidad</th>
+        <th>Precio unitario</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for detalle in detalles_venta %}
+        <tr>
+          <td>{{ detalle.venta.fecha|date:'Y-m-d' }}</td>
+          <td>{{ detalle.venta.fecha|time:'H:i:s' }}</td>
+          <td>{{ detalle.producto.nombre }}</td>
+          <td>{{ detalle.venta.id }}</td>
+          <td>{{ detalle.cantidad }}</td>
+          <td>{{ detalle.producto.precio }}</td>
+          <td>{{ detalle.total }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <script>
+    function obtenerFechaDeHoy() {
+      const hoy = new Date();
+      const anio = hoy.getFullYear();
+      const mes = String(hoy.getMonth() + 1).padStart(2, '0'); // Los meses empiezan en 0
+      const dia = String(hoy.getDate()).padStart(2, '0');
+      return `${anio}_${mes}_${dia}`;
+  }
+    // Agregar eventos a los botones de generación de facturas
+    document.getElementById('generarFacturaPdf').addEventListener('click', function () {
+      generarFactura('pdf');
+    });
+  
+    document.getElementById('generarFacturaExcel').addEventListener('click', function () {
+      generarFactura('excel');
+    });
+  
+    // Función principal para generar factura
+    function generarFactura(formato) {
+      if (formato === 'pdf') {
+        // Extraer datos de la tabla para PDF
+        const data = extraerDatosTabla();
+        enviarDatos(formato, data);
+      } else if (formato === 'excel') {
+        // Mostrar SweetAlert para seleccionar la fecha
+        Swal.fire({
+          title: 'Seleccione una fecha para hacer el reporte',
+          html: `<input type="date" id="fecha" class="fecha" placeholder="Seleccionar fecha" />`,
+          showCancelButton: true,
+          confirmButtonText: 'OK',
+          cancelButtonText: 'Cancelar',
+          preConfirm: () => {
+            const fecha = document.getElementById('fecha').value;
+            if (!fecha) {
+              Swal.showValidationMessage('Por favor seleccione una fecha');
+            }
+            return fecha; // Retornamos la fecha seleccionada para usarla en la promesa .then()
+          }
+        }).then((result) => {
+          if (result.isConfirmed) {
+            const data = extraerDatosTabla(); // Extraer datos de la tabla
+            data.fechaReporte = result.value; // Agregar la fecha seleccionada al objeto de datos
+            enviarDatos(formato, data);
+          }
+        });
+      }
+    }
+  
+    // Función para extraer datos de la tabla
+    function extraerDatosTabla() {
+      const table = document.getElementById('historial');
+      const rows = table.querySelectorAll('tbody tr');
+      const data = [];
+  
+      rows.forEach((row) => {
+        const cells = row.querySelectorAll('td');
+        const rowData = {
+          fecha: cells[0].textContent,
+          hora: cells[1].textContent,
+          producto: cells[2].textContent,
+          idCompra: cells[3].textContent,
+          cantidad: cells[4].textContent,
+          precioUnitario: cells[5].textContent,
+          total: cells[6].textContent
+        };
+        data.push(rowData);
+      });
+  
+      return data;
+    }
+  
+    // Función para enviar datos al backend
+    function enviarDatos(formato, data) {
+      const url = `http://127.0.0.1:8000/admin_cafe/generarFactura/?formato=${formato}`;
+      
+      // Si es Excel, añadir la fecha al cuerpo de la solicitud
+      const body = formato === 'excel' ? JSON.stringify({ data, fechaReporte: data.fechaReporte }) : JSON.stringify(data);
+  
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: body
+      })
+      .then((response) => response.blob()) // Convertir la respuesta a Blob
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        
+        a.download = formato === 'pdf' ? `factura_${obtenerFechaDeHoy()}.pdf` : `factura_${obtenerFechaDeHoy()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((error) => console.error('Error:', error));
+    }
+  
+    // Función para obtener el valor del token CSRF
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === name + '=') {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+  </script>
+  
+{% endblock %}
+
+
+{% block content_main_script %}
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
+<script type="module" src="{%static 'base_cafe/js/datatable.js'%}"></script>
+<script src="https://cdn.datatables.net/responsive/3.0.2/js/dataTables.responsive.js"></script>
+<script src="https://cdn.datatables.net/responsive/3.0.2/js/responsive.bootstrap5.js"></script> 
+{% endblock %}
